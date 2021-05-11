@@ -1,0 +1,241 @@
+---
+# Project 1
+# Shivam Verma
+# Section 03 Spring 2020
+---
+
+
+library(plyr)
+library(dplyr)
+library(psych)
+library(tidyverse) 
+library(e1071)
+library(scales)
+library(reshape2)
+library(usmap)
+library(ggmap)
+library(lubridate)
+library(devtools)
+library(viridis)
+library(patchwork)
+library(hrbrthemes)
+library(kableExtra)
+library(radarchart)
+library(treemap)
+library(fmsb)
+library(maps)
+
+```{r}
+fmarket <- read.csv('fmarket.csv', header = TRUE, sep = ',')
+region_data <- read.csv('region.csv', header = TRUE, sep = ',')
+colnames(region_data) <- c("State","State_Code", "Region")
+fmarket <- merge(x = fmarket , y = region_data, by = "State", all = TRUE)    
+
+fmarket[,24:58] <- ifelse(fmarket[,24:58] =="Y", 1, 0)
+farmer_data_State <- fmarket%>% dplyr::group_by(State) %>% dplyr::summarise(count=n())
+farmer_data_State$State_abbr <- state.abb[match(farmer_data_State$State,state.name)]
+farmer_data_State <- na.omit(farmer_data_State)
+
+colnames(farmer_data_State) <- c("state", "count", "abbr")
+
+# plotting chloropeth map
+plot_usmap(data = farmer_data_State, values = "count", color = "black") + 
+  scale_fill_continuous(low = "white", high = "red", name = "State", label = scales::comma) +           theme(legend.position = "right") + labs(title =  "Farmer Markets spread across USA")  
+
+
+```
+
+```{r}
+#Organic Farmer market locations
+farmer_data_org <- fmarket %>% 
+  dplyr::filter(Organic==1 & (fmarket$State != "Alaska" & fmarket$State != "Puerto Rico") & x > -150 & x < -50)       %>% drop_na()  %>% dplyr::select(x,y)
+
+
+usa <- map_data("usa") 
+
+#plotting the us map
+ggplot() + geom_polygon(data = usa, aes(x=long, y = lat, group = group)) + coord_fixed(1.3) + 
+  geom_point(data = farmer_data_org, color="yellow", mapping = aes(x = x, y = y)) + 
+  theme( panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+         panel.background = element_blank(), axis.line = element_line(colour = "grey")) + 
+  labs(title = " Organic Farmer markets locations")
+```
+
+
+```{r}
+farmer_data_State <- farmer_data_State%>%
+  arrange(desc(count)) 
+top <- head(farmer_data_State,10)
+
+ggplot(data = top, aes(x=abbr ,y=count)) +
+    geom_bar(stat="identity", fill="darkgreen", alpha=.6, width=.6) +
+    theme( panel.border = element_blank(), panel.grid.major = element_blank(), 
+                          panel.grid.minor =element_blank(), panel.background = element_blank(), 
+                          axis.line =element_line(colour = "grey")) +
+    xlab("State") + ylab("Total Count")
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Payment methods(government schemes)
+farmer_sfmnp <- fmarket %>%  dplyr::select(SFMNP, SNAP, WICcash, WIC) %>% dplyr::summarise_all(funs(sum))
+
+farmer_sfmnp <- data.frame(t(farmer_sfmnp), stringsAsFactors ="F")
+farmer_sfmnp$Category <- rownames(farmer_sfmnp)
+colnames(farmer_sfmnp) <- c("Count","Category")
+farmer_sfmnp$fraction <- 100*(farmer_sfmnp$Count/sum(farmer_sfmnp$Count))
+
+# Compute the cumulative percentages (top of each rectangle)
+farmer_sfmnp$ymax <- cumsum(farmer_sfmnp$fraction)
+
+# Compute the bottom of each rectangle
+farmer_sfmnp$ymin <- c(0, head(farmer_sfmnp$ymax, n=-1))
+
+# Compute label position
+farmer_sfmnp$labelPosition <- (farmer_sfmnp$ymax + farmer_sfmnp$ymin) / 2
+
+# Compute a good label
+farmer_sfmnp$label <- paste0(farmer_sfmnp$Category, "\n", farmer_sfmnp$Count)
+
+# Make the plot
+
+ggplot(farmer_sfmnp, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Category)) +
+  geom_rect() +
+  geom_text( x=1, aes(y=labelPosition, label=label, color=Category), size=6) + 
+  scale_fill_brewer(palette=5) +
+  scale_color_brewer(palette=5) +
+  coord_polar(theta="y") +
+  xlim(c(-1, 4)) +
+  theme_void() +
+  theme(legend.position = "none")
+rm(farmer_sfmnp)
+
+```
+
+```{r}
+# products availability
+
+farmer_products<- fmarket[,c(30:58,61)]
+farmer_products <- data.frame(farmer_products[!(is.na(farmer_products$Region) | 
+                                                  farmer_products$Region == ""), ])
+
+farmer_products <- farmer_products %>% group_by(Region) %>% dplyr::summarise_all(funs(sum))
+farmer_products <- farmer_products %>% gather(c(2:30), key = "products" , value = "value")
+
+# Plotting tree map
+treemap(farmer_products,
+        index=c("Region","products"),
+        vSize="value", palette = "Set1", type="index")
+
+```
+
+```{r}
+farmer_state_product <- fmarket %>% select(c(29:58,60)) %>% drop_na() %>% group_by(State_Code) %>%
+  dplyr::summarise_all(funs(sum))
+
+farmer_state_product$Count <- rowSums( farmer_state_product[,2:31])
+farmer_state_product <- farmer_state_product %>% arrange(desc(Count)) %>% mutate(State_Code=factor(State_Code, State_Code))
+
+
+empty_bar=10
+
+to_add = matrix(NA, empty_bar, ncol(farmer_state_product))
+colnames(to_add) = colnames(farmer_state_product)
+farmer_state_product=rbind(farmer_state_product, to_add)
+farmer_state_product$id=seq(1, nrow(farmer_state_product))
+
+# Get the name and the y position of each label
+label_tmp=farmer_state_product
+number_of_bar=nrow(label_tmp)
+angle= 90 - 360 * (label_tmp$id-0.5) /number_of_bar     # I substract 0.5 because the letter must have the angle of the center of the bars. Not extreme right(1) or extreme left (0)
+label_tmp$hjust<-ifelse( angle < -90, 1, 0)
+label_tmp$angle<-ifelse(angle < -90, angle+180, angle)
+label_tmp$State_Code <- gsub("United States", "US", label_tmp$State_Code)
+label_tmp$State_Code <- paste(label_tmp$State_Code, " (", label_tmp$Count,")", sep="")
+
+# Make the plot
+
+
+ggplot(farmer_state_product, aes(x=as.factor(id), y=Count)) +       # Note that id is a factor. If x is numeric, there is some space between the first bar
+  geom_bar(stat="identity", fill=alpha("#69b3a2", 0.8)) + 
+  ylim(-7000,8000) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.margin = unit(rep(-1,4), "cm") 
+  ) +
+  coord_polar(start = 0) + 
+  geom_text(data=label_tmp, aes(x=id, y=Count+200, label=State_Code ), color="black", fontface="bold",alpha=0.6, size=2.5, angle= label_tmp$angle, hjust=label_tmp$hjust, inherit.aes = FALSE ) +
+  geom_text( aes(x=24, y=8000, label="Products" ), color="black", inherit.aes = FALSE)
+
+```
+
+```{r}
+
+#Social media analysis
+farmer_data_social <- fmarket %>% dplyr::select(Website, Facebook, Twitter, Youtube, OtherMedia, Region)
+farmer_data_social$Website <- ifelse(str_length(farmer_data_social$Website)>0,1,0) 
+farmer_data_social$Facebook <- ifelse(str_length(farmer_data_social$Facebook)>0,1,0) 
+farmer_data_social$Twitter <- ifelse(str_length(farmer_data_social$Twitter)>0,1,0) 
+farmer_data_social$Youtube <- ifelse(str_length(farmer_data_social$Youtube)>0,1,0) 
+farmer_data_social$OtherMedia <- ifelse(str_length(farmer_data_social$OtherMedia)>0,1,0) 
+farmer_data_social <- na.omit(farmer_data_social)
+farmer_data_social <- data.frame(farmer_data_social[!(is.na(farmer_data_social$Region) | 
+                                              farmer_data_social$Region == ""), ])
+
+farmer_data_social <- farmer_data_social %>% dplyr::group_by(Region) %>% 
+                dplyr::summarise(Website = sum(Website), Facebook = sum(Facebook),
+              Twitter = sum(Twitter), Youtube = sum(Youtube), Other_Media = sum(OtherMedia))
+farmer_data_social <- farmer_data_social %>% 
+  gather(c("Website" , "Facebook" , "Twitter" , "Youtube" , "Other_Media"), 
+         key = "Social_Media" , value = "Value")  
+
+# Plotting grouped bar chart
+ggplot(farmer_data_social, aes(fill=Social_Media, y=Value, x=Region, label = Value)) +
+  geom_bar(position="dodge", stat="identity") + geom_text(position = position_dodge(width = 0.9),
+vjust = -1, size = 3) + scale_fill_manual(values=c("#3b5998","#dcdd00","#00ACEE","#37ff32","#c4302b"))
+rm(farmer_data_social)
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+farmer_premises <- fmarket%>% dplyr::select(Region, Location) %>% drop_na() 
+farmer_premises$Government <- str_count(farmer_premises$Location, "government")
+farmer_premises$Private <- str_count(farmer_premises$Location, "Private")
+farmer_premises$Faith <- str_count(farmer_premises$Location, "Faith")
+farmer_premises$Others <- str_count(farmer_premises$Location, "Other")
+
+farmer_premises <- na.omit(farmer_premises)
+
+farmer_premises <- farmer_premises %>%
+  dplyr::group_by(Region) %>%
+  dplyr::summarise_each(funs(sum), -Location)
+
+farmer_premises <- farmer_premises[ , 2:5]
+rownames(farmer_premises) <- c("Midwest", "Northeast", "South", "West")
+
+set.seed(99)
+farmer_premises <- rbind(rep(300,5) , rep(8,5) , farmer_premises)
+
+# Color vector
+colors_border <- c(rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.9), rgb(0.7,0.5,0.1,0.9) )
+colors_in <- c(rgb(0.2,0.5,0.5,0.4), rgb(0.8,0.2,0.5,0.4), rgb(0.7,0.5,0.1,0.4) )
+
+
+#plotting radar chart
+radarchart( farmer_premises, axistype = 1 , 
+            #custom polygon
+            pcol = colors_border, pfcol = colors_in, plwd = 4 , plty = 1,
+            #custom the grid
+            cglcol = "grey", cglty = 1, axislabcol = "grey", caxislabels = seq(0,300,75), cglwd = 0.8,
+            #custom labels
+            vlcex = 0.8)
+# Add a legend
+legend(x = 0.9, y = 1, legend = c("Midwest", "Northeast", "South", "West"), bty = "n", pch = 20 , col = colors_in, text.col = "black", cex = 1.2, pt.cex = 3)
+rm(colors_border, colors_in, farmer_premises)
+
+```
+
+
+
