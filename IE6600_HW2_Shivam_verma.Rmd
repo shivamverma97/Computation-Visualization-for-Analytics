@@ -1,0 +1,111 @@
+``` {r Task 1}
+
+# Homework 2
+# Shivam Verma
+# Section 03 Spring 2020
+
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(reshape2)
+library(tidyr)
+library(scales)
+
+
+# Computing the total number of arrival delays (in mins) for each carrier.
+airlines <- read.csv("airlines_delay.csv")
+new <- airlines[, c(3,11)]
+new <- data.frame(new[!(is.na(new$arr_delay)| new$arr_delay==""),])
+new1 <- new %>%
+      group_by(carrier) %>%
+      dplyr::summarise(total_delay=sum(arr_delay)) %>% 
+      arrange(desc(total_delay)) 
+  new1 <- head(new1,10)
+
+# plotting to show the top 10 carriers by arrival delays.
+ggplot(new1, aes(reorder(x=carrier,-total_delay), y=total_delay/10^7)) + geom_bar(stat="identity") + labs(title = "Top 10 Carrier Delays", x="Carrier Name", y="Total minutes in millions")
+```
+
+```{r Task 2}
+
+# Computing the total number of arrival delays (in mins) for each carrier.
+airlines <- read.csv("airlines_delay.csv")
+q <- airlines[,c(1,3,11)]
+q <- data.frame(q[!(is.na(q$arr_delay)| q$arr_delay==""),])
+
+# Used results from Task 1 to find top carriers.
+q <- data.frame(q[q$carrier==new1$carrier, ])
+q <- q %>%
+  group_by(carrier, year) %>%
+  dplyr::summarise(total_delay= sum(arr_delay))
+
+# Creating a stacked bar plot.
+ggplot(q, aes(reorder(x=carrier,-total_delay), y=total_delay/10^7, fill=as.factor(year))) + geom_bar(stat="identity")  + labs(title = "top 10 carrier delays", x="carrier name", y="total minutes in millions") 
+```
+
+```{r Task 3}
+
+# Gathering required information
+airlines <- read.csv("airlines_delay.csv")
+t <- airlines[,c(4,5,12:16)]
+t <-data.frame(t[!(is.na(t$carrier_delay)| t$carrier_delay==""),])
+t <-data.frame(t[!(is.na(t$weather_delay)| t$weather_delay==""),])
+t <-data.frame(t[!(is.na(t$nas_delay)| t$nas_delay==""),])
+t <-data.frame(t[!(is.na(t$security_delay)| t$security_delay==""),])
+t <-data.frame(t[!(is.na(t$late_aircraft_delay)| t$late_aircraft_delay==""),])
+k<- melt(t,id= c("carrier_name","airport"))
+k$log_delay_in_mins <- log(k$value)
+
+# Generating the density plot
+ggplot(k, aes(x = log_delay_in_mins, fill= variable)) + geom_density(alpha = .5) + labs(title = "Density Plot For Delays", x="Log Delay in mins", y="Density", fill= "Delay type")
+```
+
+```{r Task 4}
+
+airlines <- read.csv("airlines_delay.csv")
+
+# Gathering required information
+h <- airlines[, c(3,12:16)]
+h <-data.frame(h[!(is.na(h$carrier_delay)| h$carrier_delay==""),])
+h <-data.frame(h[!(is.na(h$weather_delay)| h$weather_delay==""),])
+h <-data.frame(h[!(is.na(h$nas_delay)| h$nas_delay==""),])
+h <-data.frame(h[!(is.na(h$security_delay)| h$security_delay==""),])
+h <-data.frame(h[!(is.na(h$late_aircraft_delay)| h$late_aircraft_delay==""),])
+g <- h %>%
+  group_by(carrier) %>%
+  
+# Used initails for delays because long names were causing overlapping in graphs.
+  dplyr::summarise(c_delay=sum(carrier_delay),w_delay=sum(weather_delay),n_delay=sum(nas_delay),s_delay=sum(security_delay),l_delay=sum(late_aircraft_delay))
+g<- g %>%
+gather(c("c_delay","w_delay","n_delay","s_delay","l_delay"),key="delay",value = "value")
+
+# Generating Heatmap
+ggplot(data = g, aes(x=carrier, y= delay, fill=value)) + 
+  geom_tile()+ coord_flip() + labs(title = "HeatMap For Delays", x="Carrier ", y="Delay Type", fill= "sum_delay")
+```
+
+```{r Task 5}
+
+airlines <- read.csv("airlines_delay.csv")
+
+# Gathering required information
+a <- airlines[, c(1,12:16)]
+a <-data.frame(a[!(is.na(a$carrier_delay)| a$carrier_delay==""),])
+a <-data.frame(a[!(is.na(a$weather_delay)| a$weather_delay==""),])
+a <-data.frame(a[!(is.na(a$nas_delay)| a$nas_delay==""),])
+a <-data.frame(a[!(is.na(a$security_delay)| a$security_delay==""),])
+a <-data.frame(a[!(is.na(a$late_aircraft_delay)| a$late_aircraft_delay==""),])
+b <- a %>%
+  group_by(year) %>%
+  
+# Used initails because long names were causing overlapping in graphs.
+  dplyr::summarise(c_delay=sum(carrier_delay),w_delay=sum(weather_delay),n_delay=sum(nas_delay),s_delay=sum(security_delay),l_delay=sum(late_aircraft_delay))
+b<- b %>%
+gather(c("c_delay","w_delay","n_delay","s_delay","l_delay"),key="delay",value = "value")
+
+# Generating Line Plot
+ggplot(b, aes(x=as.factor(year), y=value, group=delay, col= delay)) +geom_line()+ geom_point() + labs(title = "Line plot for Delays", x="Factor(year) ", y="Sum_Delay", fill= "delay type")
+
+```
+
+
